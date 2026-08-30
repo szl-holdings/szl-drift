@@ -1,0 +1,88 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 SZL Holdings
+#
+# This repository had no CI at all. The probe is the org's origin-drift signal,
+# so a silent regression here means the estate loses a control without noticing.
+#
+# Everything in this workflow is offline: the test suite stubs urlopen, so it is
+# safe to run on a fork PR and cannot be turned red by an upstream outage. The
+# live probe runs in drift-report.yml instead, on a schedule, non-blocking.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint and format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install ruff (pinned — an unpinned lint tool turns upgrades into red builds)
+        run: python -m pip install --disable-pip-version-check "ruff==0.16.5"
+      - name: ruff check
+        run: python -m ruff check .
+      - name: ruff format --check
+        run: python -m ruff format --check .
+
+  test:
+    name: Offline tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install pytest
+        run: python -m pip install --disable-pip-version-check "pytest==9.1.1"
+      - name: Byte-compile
+        run: python -m compileall -q probe.py tests
+      - name: Unit tests — no network, urlopen is stubbed
+        run: python -m pytest -q
+
+  fail-closed-contract:
+    name: Fail-closed contract
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Assert the probe can never emit a production certificate
+        run: |
+          set -euo pipefail
+          # The one invariant this repo exists to hold: no code path may set
+          # certified_production_ready to true. Grep is deliberate here — it
+          # catches a future edit that a unit test author might forget to cover.
+          if grep -RnE '"certified_production_ready"[[:space:]]*:[[:space:]]*True' probe.py; then
+            echo "::error file=probe.py::probe.py must never set certified_production_ready to True"
+            exit 1
+          fi
+          echo "OK: no code path certifies production readiness."

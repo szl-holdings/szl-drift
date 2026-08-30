@@ -33,8 +33,14 @@ def main() -> int:
     honest = get(f"{PRODUCT}/api/a11oy/v1/honest")
     readyz = get(f"{PRODUCT}/readyz")
     health = get(f"{PROOF}/health.json")
-    body = honest.get("body") or {}
-    doctrine = body.get("doctrine_lock") or {}
+    # Guard with isinstance, not `or {}`: a well-formed JSON response that is a
+    # list (or a string, or a number) is truthy, so `or {}` lets it through and
+    # the following .get() raises AttributeError. That would break the probe's
+    # fail-closed contract on a malformed-but-valid-JSON upstream.
+    raw_body = honest.get("body")
+    body = raw_body if isinstance(raw_body, dict) else {}
+    raw_doctrine = body.get("doctrine_lock")
+    doctrine = raw_doctrine if isinstance(raw_doctrine, dict) else {}
     report = {
         "schema": "szl.origin-drift/v1",
         "certified_production_ready": False,
@@ -53,7 +59,9 @@ def main() -> int:
         "proof_health": {
             "status": health["status"],
             "sha": (health.get("body") or {}).get("sha") if isinstance(health.get("body"), dict) else None,
-            "signer": (health.get("body") or {}).get("signer") if isinstance(health.get("body"), dict) else None,
+            "signer": (health.get("body") or {}).get("signer")
+            if isinstance(health.get("body"), dict)
+            else None,
             "note": "Static document. Not DSSE-LIVE.",
         },
         "errors": {

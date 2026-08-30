@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 SZL Holdings
+#
+# Explicit rule selection so CI is deterministic across ruff releases: a bare
+# `ruff check` inherits whatever the installed version defaults to, which turns
+# a routine ruff upgrade into a red build.
+line-length = 110
+target-version = "py310"
+
+[lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "I",   # import sorting
+  "UP",  # pyupgrade
+  "B",   # bugbear
+  "SIM", # simplify
+]
+[lint.per-file-ignores]
+# probe.py deliberately catches bare Exception in `get()`: the probe's contract
+# is to fail closed and return a report, never to propagate a transport error.
+"probe.py" = ["BLE001"]
