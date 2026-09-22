@@ -9,8 +9,8 @@ replaced, so the suite is deterministic and safe to run in CI on a fork.
 The properties under test are the two the probe exists to guarantee:
 
 1. **Fail closed.** Every failure path returns a well-formed dict with
-   ``ok=False`` rather than raising, so a dead endpoint degrades the report
-   instead of crashing the run.
+   ``ok=False`` rather than raising, so a dead or malformed endpoint degrades
+   the report instead of crashing the run or being recorded as healthy.
 2. **Never fabricates a certificate.** ``certified_production_ready`` is
    ``False`` in the report unconditionally — including when every upstream
    endpoint returns a healthy 200.
@@ -59,21 +59,49 @@ def test_get_parses_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["error"] is None
 
 
-def test_get_returns_none_body_on_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_fails_closed_on_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         probe.urllib.request,
         "urlopen",
         lambda *_a, **_k: _FakeResponse(b"<!doctype html><title>nope</title>"),
     )
     result = probe.get("https://example.test/x")
-    assert result["ok"] is True
+    assert result["ok"] is False
+    assert result["status"] == 200
     assert result["body"] is None
-    assert result["error"] is None
+    assert result["error"].startswith("invalid JSON response:")
+
+
+@pytest.mark.parametrize(
+    ("payload", "kind"),
+    [
+        (b'["not", "an", "object"]', "list"),
+        (b'"a string"', "str"),
+        (b"42", "int"),
+        (b"true", "bool"),
+        (b"null", "NoneType"),
+    ],
+)
+def test_get_fails_closed_on_json_that_is_not_an_object(
+    monkeypatch: pytest.MonkeyPatch, payload: bytes, kind: str
+) -> None:
+    monkeypatch.setattr(
+        probe.urllib.request,
+        "urlopen",
+        lambda *_a, **_k: _FakeResponse(payload),
+    )
+    result = probe.get("https://example.test/x")
+    assert result["ok"] is False
+    assert result["status"] == 200
+    assert result["body"] is None
+    assert result["error"] == f"invalid JSON object: got {kind}"
 
 
 def test_get_fails_closed_on_http_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def _raise(*_a: object, **_k: object) -> None:
-        raise urllib.error.HTTPError("https://example.test/x", 503, "boom", {}, None)  # type: ignore[arg-type]
+        raise urllib.error.HTTPError(  # type: ignore[arg-type]
+            "https://example.test/x", 503, "boom", {}, None
+        )
 
     monkeypatch.setattr(probe.urllib.request, "urlopen", _raise)
     result = probe.get("https://example.test/x")
@@ -128,6 +156,47 @@ def test_main_emits_schema_and_never_certifies_on_healthy_upstream(
     assert report["errors"] == {"honest": None, "readyz": None, "health": None}
 
 
+@pytest.mark.parametrize("explicit_value", [0, None, False, ""])
+def test_main_preserves_explicit_falsy_locked_formula_count(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    explicit_value: object,
+) -> None:
+    """An explicit top-level observation must never be hidden by fallback data."""
+
+    observed = {
+        "ok": True,
+        "status": 200,
+        "body": {
+            "locked_formula_count": explicit_value,
+            "doctrine_lock": {"locked_formula_count": 8},
+        },
+        "error": None,
+    }
+    monkeypatch.setattr(probe, "get", lambda _url: observed)
+
+    report = _run_main(capsys)
+
+    assert report["product_honest"]["locked_formula_count"] is explicit_value
+    assert report["certified_production_ready"] is False
+
+
+def test_main_uses_nested_locked_formula_count_only_when_top_level_is_absent(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    observed = {
+        "ok": True,
+        "status": 200,
+        "body": {"doctrine_lock": {"locked_formula_count": 8}},
+        "error": None,
+    }
+    monkeypatch.setattr(probe, "get", lambda _url: observed)
+
+    report = _run_main(capsys)
+
+    assert report["product_honest"]["locked_formula_count"] == 8
+
+
 def test_main_degrades_without_raising_when_everything_is_down(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -147,13 +216,7 @@ def test_main_degrades_without_raising_when_everything_is_down(
 def test_main_fails_closed_on_valid_json_that_is_not_an_object(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], weird_body: object
 ) -> None:
-    """Regression: a 200 whose JSON body is not an object must not raise.
-
-    Before the accompanying fix, ``main`` used ``honest.get("body") or {}``. A
-    JSON list, string, or number is truthy, so it passed the ``or`` guard and the
-    next ``.get()`` raised ``AttributeError`` — breaking the probe's fail-closed
-    contract on an upstream that returns valid JSON of the wrong shape.
-    """
+    """Main stays defensive even if a caller substitutes get() with bad data."""
     monkeypatch.setattr(
         probe,
         "get",

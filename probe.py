@@ -20,8 +20,20 @@ def get(url: str) -> dict[str, Any]:
             raw = res.read().decode("utf-8", "replace")
             try:
                 body: Any = json.loads(raw)
-            except json.JSONDecodeError:
-                body = None
+            except json.JSONDecodeError as exc:
+                return {
+                    "ok": False,
+                    "status": res.status,
+                    "body": None,
+                    "error": f"invalid JSON response: {exc.msg}",
+                }
+            if not isinstance(body, dict):
+                return {
+                    "ok": False,
+                    "status": res.status,
+                    "body": None,
+                    "error": f"invalid JSON object: got {type(body).__name__}",
+                }
             return {"ok": True, "status": res.status, "body": body, "error": None}
     except urllib.error.HTTPError as exc:
         return {"ok": False, "status": exc.code, "body": None, "error": str(exc)}
@@ -33,20 +45,27 @@ def main() -> int:
     honest = get(f"{PRODUCT}/api/a11oy/v1/honest")
     readyz = get(f"{PRODUCT}/readyz")
     health = get(f"{PROOF}/health.json")
-    # Guard with isinstance, not `or {}`: a well-formed JSON response that is a
-    # list (or a string, or a number) is truthy, so `or {}` lets it through and
-    # the following .get() raises AttributeError. That would break the probe's
-    # fail-closed contract on a malformed-but-valid-JSON upstream.
+    # Keep the defensive shape guard even though get() rejects non-object JSON:
+    # tests and future callers can replace get(), and main must still degrade
+    # rather than crash on a malformed result.
     raw_body = honest.get("body")
     body = raw_body if isinstance(raw_body, dict) else {}
     raw_doctrine = body.get("doctrine_lock")
     doctrine = raw_doctrine if isinstance(raw_doctrine, dict) else {}
+    # Presence, not truthiness, selects the authoritative top-level observation.
+    # An explicit 0/null must not be replaced by a nested fallback and thereby
+    # hide drift in the source response.
+    locked_formula_count = (
+        body["locked_formula_count"]
+        if "locked_formula_count" in body
+        else doctrine.get("locked_formula_count")
+    )
     report = {
         "schema": "szl.origin-drift/v1",
         "certified_production_ready": False,
         "product_honest": {
             "status": honest["status"],
-            "locked_formula_count": body.get("locked_formula_count") or doctrine.get("locked_formula_count"),
+            "locked_formula_count": locked_formula_count,
             "lambda": doctrine.get("lambda"),
             "kernel": doctrine.get("commit"),
             "git_sha": body.get("git_sha"),
