@@ -18,7 +18,8 @@ A `200` from product `/readyz` is **not** a production certificate. Factory bind
 python3 probe.py
 ```
 
-Exit `0` always prints JSON. Missing origins are `UNAVAILABLE`, never PASS.
+Exit `0` always prints JSON. Missing, malformed, or non-object origin responses populate `errors`;
+a known HTTP status is retained. No upstream response can set `certified_production_ready` to true.
 
 ## Honesty
 
