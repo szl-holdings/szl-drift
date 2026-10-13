@@ -2,9 +2,11 @@
 # Copyright 2026 SZL Holdings
 #
 # The live half of the probe, kept separate from CI on purpose: an upstream
-# outage must not turn a pull request red. This job publishes the drift report
-# as an artifact and a run summary, and only fails if the probe itself crashes —
-# a degraded report (status: null, errors populated) is a valid, expected result.
+# outage must not turn a pull request red. This job always publishes the drift
+# report (a degraded report with status: null and errors populated is a valid
+# result), then runs the availability verdict last: the scheduled run turns red
+# when any probed origin did not answer HTTP 200, so an outage alerts instead of
+# being archived as a green artifact.
 name: Origin drift report
 
 on:
@@ -75,3 +77,6 @@ jobs:
           path: drift-report.json
           if-no-files-found: warn
           retention-days: 90
+
+      - name: Fail the scheduled run when an origin is unavailable
+        run: python verdict.py drift-report.json
