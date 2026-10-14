@@ -316,9 +316,7 @@ def test_redirect_handler_allows_only_the_requested_origin(newurl: str, allowed:
 
 @pytest.mark.parametrize(("scheme", "default_port"), [("http", 80), ("https", 443)])
 @pytest.mark.parametrize("port", [None, "default", 0, 8443])
-def test_origin_defaults_only_an_omitted_port(
-    scheme: str, default_port: int, port: int | str | None
-) -> None:
+def test_origin_defaults_only_an_omitted_port(scheme: str, default_port: int, port: int | str | None) -> None:
     explicit_port = default_port if port == "default" else port
     suffix = "" if explicit_port is None else f":{explicit_port}"
     expected_port = default_port if explicit_port is None else explicit_port
