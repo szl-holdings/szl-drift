@@ -21,7 +21,8 @@ def _origin(url: str) -> tuple[str, str, int | None]:
     """Return (scheme, host, port) with the default port filled in. Raises ValueError on a bad port."""
     parts = urllib.parse.urlsplit(url)
     scheme = parts.scheme.lower()
-    return scheme, (parts.hostname or "").lower(), parts.port or _DEFAULT_PORTS.get(scheme)
+    port = parts.port if parts.port is not None else _DEFAULT_PORTS.get(scheme)
+    return scheme, (parts.hostname or "").lower(), port
 
 
 def _origin_label(url: str) -> str:
