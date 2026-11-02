@@ -5,8 +5,8 @@
 # outage must not turn a pull request red. This job always publishes the drift
 # report (a degraded report with status: null and errors populated is a valid
 # result), then runs the availability verdict last: the scheduled run turns red
-# when any probed origin did not answer HTTP 200, so an outage alerts instead of
-# being archived as a green artifact.
+# when any probed origin did not answer HTTP 200 or its response was rejected,
+# so an outage or malformed response alerts instead of becoming a green artifact.
 name: Origin drift report
 
 on:
@@ -78,5 +78,5 @@ jobs:
           if-no-files-found: warn
           retention-days: 90
 
-      - name: Fail the scheduled run when an origin is unavailable
+      - name: Fail the scheduled run when an origin is unavailable or its response is invalid
         run: python verdict.py drift-report.json

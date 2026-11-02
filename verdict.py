@@ -5,9 +5,10 @@
 
 probe.py always exits 0 so a degraded report is still published. This verdict
 is the separate, scheduled-only alert: it exits 1 when any probed origin did
-not answer HTTP 200, so an outage turns the scheduled run red instead of being
-archived as a green artifact. It checks reachability only. It does not judge
-doctrine values, and a pass is not a production certificate.
+not answer HTTP 200 or the probe rejected its response, so an outage or invalid
+response turns the scheduled run red instead of being archived as a green
+artifact. It does not judge doctrine values, and a pass is not a production
+certificate.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ ERROR_KEYS = {"product_honest": "honest", "product_readyz": "readyz", "proof_hea
 
 
 def reasons(report: Any) -> list[str]:
-    """Return one line per unavailable origin; an empty list means all answered 200."""
+    """Return one line per unavailable origin or rejected response."""
     if not isinstance(report, dict) or report.get("schema") != "szl.origin-drift/v1":
         return ["report is missing or not szl.origin-drift/v1"]
     errors = report.get("errors") if isinstance(report.get("errors"), dict) else {}
@@ -29,8 +30,8 @@ def reasons(report: Any) -> list[str]:
     for name in ORIGINS:
         section = report.get(name)
         status = section.get("status") if isinstance(section, dict) else None
-        if status != 200:
-            error = errors.get(ERROR_KEYS[name])
+        error = errors.get(ERROR_KEYS[name])
+        if status != 200 or error:
             out.append(f"{name}: status {status!r}" + (f" ({error})" if error else ""))
     return out
 
@@ -51,7 +52,7 @@ def main(argv: list[str]) -> int:
         for line in failed:
             print(f"- {line}")
         return 1
-    print("All probed origins answered HTTP 200. Reachability only; not a production certificate.")
+    print("All probed origins answered HTTP 200 without probe errors. Not a production certificate.")
     return 0
 
 

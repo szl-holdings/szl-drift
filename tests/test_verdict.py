@@ -4,11 +4,13 @@
 
 The verdict reads a finished report and never touches the network. These
 tests pin the property the scheduled job relies on: any probed origin that did
-not answer 200 makes the verdict exit 1, and a healthy report exits 0.
+not answer 200 or had a rejected response makes the verdict exit 1, and a
+healthy report exits 0.
 """
 
 from __future__ import annotations
 
+import io
 import json
 import sys
 from pathlib import Path
@@ -89,3 +91,40 @@ def test_verdict_reads_real_probe_output(monkeypatch, capsys, tmp_path):
     path.write_text(capsys.readouterr().out, encoding="utf-8")
     assert verdict.main(["verdict.py", str(path)]) == 1
     assert "product_readyz: status 503 (HTTP Error 503: Service Unavailable)" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("origin", ["honest", "readyz", "health"])
+@pytest.mark.parametrize(
+    "payload",
+    [b"<html>proxy error</html>", b"[]", b'{"padding":"' + b"x" * 64 + b'"}'],
+    ids=["invalid-json", "non-object", "oversized"],
+)
+def test_verdict_rejects_http_200_when_real_probe_rejects_body(
+    monkeypatch, capsys, tmp_path, origin, payload
+):
+    """A 200 proxy/error page must not become a green scheduled artifact."""
+    urls = {
+        "honest": f"{probe.PRODUCT}/api/a11oy/v1/honest",
+        "readyz": f"{probe.PRODUCT}/readyz",
+        "health": f"{probe.PROOF}/health.json",
+    }
+
+    def fake_open(request, **_kwargs):
+        response = io.BytesIO(payload if request.full_url == urls[origin] else b"{}")
+        response.status = 200
+        return response
+
+    monkeypatch.setattr(probe, "MAX_BODY_BYTES", 64)
+    monkeypatch.setattr(probe._OPENER, "open", fake_open)
+    assert probe.main() == 0
+    output = capsys.readouterr().out
+    report = json.loads(output)
+    section = next(name for name, key in verdict.ERROR_KEYS.items() if key == origin)
+    assert report[section]["status"] == 200
+    assert report["errors"][origin]
+    assert report["certified_production_ready"] is False
+    assert verdict.reasons(report) == [f"{section}: status 200 ({report['errors'][origin]})"]
+    path = tmp_path / "drift-report.json"
+    path.write_text(output, encoding="utf-8")
+    assert verdict.main(["verdict.py", str(path)]) == 1
+    assert report["errors"][origin] in capsys.readouterr().out
