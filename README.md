@@ -34,6 +34,11 @@ python3 probe.py
 Exit `0` always prints JSON. Missing, malformed, or non-object origin responses populate `errors`;
 a known HTTP status is retained. No upstream response can set `certified_production_ready` to true.
 
+The scheduled `verdict.py drift-report.json` check fails when an origin did not
+answer HTTP 200 or its response was rejected by the probe. A 200 response with
+malformed JSON, a non-object body, or an oversized body remains an alert. A
+passing verdict does not evaluate doctrine values or certify production readiness.
+
 ## Honesty
 
 - Doctrine v11 LOCKED
