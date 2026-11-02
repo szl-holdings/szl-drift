@@ -115,9 +115,7 @@ def get(url: str) -> dict[str, Any]:
                 raw = data.decode("utf-8")
                 body: Any = _strict_json(raw)
             except (UnicodeDecodeError, ValueError) as exc:
-                message = (
-                    exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
-                )
+                message = exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
                 return {
                     "ok": False,
                     "status": res.status,
