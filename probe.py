@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -68,6 +69,35 @@ def _read_capped(res: Any, cap: int) -> bytes:
     return b"".join(chunks)
 
 
+def _reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON object key")
+        value[key] = item
+    return value
+
+
+def _reject_nonfinite_constant(_value: str) -> Any:
+    raise ValueError("non-finite JSON number")
+
+
+def _parse_finite_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError("non-finite JSON number")
+    return number
+
+
+def _strict_json(raw: str) -> Any:
+    return json.loads(
+        raw,
+        object_pairs_hook=_reject_duplicate_keys,
+        parse_constant=_reject_nonfinite_constant,
+        parse_float=_parse_finite_float,
+    )
+
+
 def get(url: str) -> dict[str, Any]:
     req = urllib.request.Request(url, headers={"User-Agent": "szl-drift/1", "Accept": "application/json"})
     try:
@@ -81,15 +111,18 @@ def get(url: str) -> dict[str, Any]:
                     "body": None,
                     "error": f"response body exceeds {cap} bytes",
                 }
-            raw = data.decode("utf-8", "replace")
             try:
-                body: Any = json.loads(raw)
-            except json.JSONDecodeError as exc:
+                raw = data.decode("utf-8")
+                body: Any = _strict_json(raw)
+            except (UnicodeDecodeError, ValueError) as exc:
+                message = (
+                    exc.msg if isinstance(exc, json.JSONDecodeError) else str(exc)
+                )
                 return {
                     "ok": False,
                     "status": res.status,
                     "body": None,
-                    "error": f"invalid JSON response: {exc.msg}",
+                    "error": f"invalid JSON response: {message}",
                 }
             if not isinstance(body, dict):
                 return {
