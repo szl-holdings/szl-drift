@@ -65,6 +65,54 @@ def test_get_parses_json_body(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["error"] is None
 
 
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [(b'{"value":1.5}', 1.5), (b'{"value":1e2}', 100.0)],
+)
+def test_get_accepts_finite_json_numbers(
+    monkeypatch: pytest.MonkeyPatch, payload: bytes, expected: float
+) -> None:
+    monkeypatch.setattr(
+        probe._OPENER,
+        "open",
+        lambda *_a, **_k: _FakeResponse(payload),
+    )
+    result = probe.get("https://example.test/x")
+    assert result == {
+        "ok": True,
+        "status": 200,
+        "body": {"value": expected},
+        "error": None,
+    }
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b'{"locked_formula_count":0,"locked_formula_count":749}',
+        b'{"doctrine_lock":{"lambda":0,"lambda":14}}',
+        b'{"value":NaN}',
+        b'{"value":Infinity}',
+        b'{"value":-Infinity}',
+        b'{"value":1e999}',
+        b'{"value":"\xff"}',
+    ],
+)
+def test_get_fails_closed_on_ambiguous_nonfinite_or_undecodable_json(
+    monkeypatch: pytest.MonkeyPatch, payload: bytes
+) -> None:
+    monkeypatch.setattr(
+        probe._OPENER,
+        "open",
+        lambda *_a, **_k: _FakeResponse(payload),
+    )
+    result = probe.get("https://example.test/x")
+    assert result["ok"] is False
+    assert result["status"] == 200
+    assert result["body"] is None
+    assert result["error"].startswith("invalid JSON response:")
+
+
 def test_get_fails_closed_on_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         probe._OPENER,
