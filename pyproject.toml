@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl-drift"
+version = "0.1.0"
+description = "Origin-drift receipts: compare a-11-oy.com, a11oy.net, and a Ring 1 preview. Λ = Conjecture 1. Apache-2.0."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+authors = [{ name = "Stephen Lutar", email = "stephen@szlholdings.com" }]
+dependencies = []
+
+[project.urls]
+Homepage = "https://a-11-oy.com"
+Repository = "https://github.com/szl-holdings/szl-drift"
+
+[tool.setuptools]
+py-modules = ["probe", "verdict"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"

@@ -48,3 +48,9 @@ passing verdict does not evaluate doctrine values or certify production readines
 - Apache-2.0
 
 Interactive verify stays on [a-11-oy.com/verify](https://a-11-oy.com/verify).
+
+Estate on Hugging Face: models, datasets and Spaces are published under the [SZLHOLDINGS](https://huggingface.co/SZLHOLDINGS) org.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE).
