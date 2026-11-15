@@ -111,20 +111,12 @@ def read_metadata(wheel: Path) -> dict:
     with zipfile.ZipFile(wheel) as z:
         meta_name = next(n for n in z.namelist() if n.endswith(".dist-info/METADATA"))
         msg = HeaderParser().parsestr(z.read(meta_name).decode("utf-8", "replace"))
-        top = sorted(
-            {
-                n.split("/")[0]
-                for n in z.namelist()
-                if not n.split("/")[0].endswith(".dist-info")
-            }
-        )
+        top = sorted({n.split("/")[0] for n in z.namelist() if not n.split("/")[0].endswith(".dist-info")})
         py_files = [n for n in z.namelist() if n.endswith(".py")]
     return {"msg": msg, "top_level": top, "py_count": len(py_files)}
 
 
-def gate_package(
-    pkg: dict, repo: str, event: str, ref_type: str, ref_name: str, outdir: Path
-) -> dict:
+def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str, outdir: Path) -> dict:
     pdir = Path(pkg["dir"]).resolve()
     pyproject = pdir / "pyproject.toml"
     if not pyproject.is_file():
@@ -135,13 +127,9 @@ def gate_package(
     release_cfg = ((pp.get("tool") or {}).get("szl") or {}).get("release") or {}
 
     if norm(project.get("name", "")) != norm(pkg["name"]):
-        fail(
-            f"{pkg['name']}: pyproject [project].name is {project.get('name')!r}, expected {pkg['name']!r}"
-        )
+        fail(f"{pkg['name']}: pyproject [project].name is {project.get('name')!r}, expected {pkg['name']!r}")
     if PRIVATE_CLASSIFIER in (project.get("classifiers") or []):
-        fail(
-            f"{pkg['name']}: carries '{PRIVATE_CLASSIFIER}' — not a publishable package"
-        )
+        fail(f"{pkg['name']}: carries '{PRIVATE_CLASSIFIER}' — not a publishable package")
     if not (pp.get("build-system") or {}).get("build-backend"):
         fail(
             f"{pkg['name']}: pyproject has no [build-system].build-backend (PEP 517 backend must be explicit)"
@@ -154,10 +142,7 @@ def gate_package(
     urls = project.get("urls") or {}
     source_url = urls.get("Source") or urls.get("Repository") or urls.get("Source Code")
     expected_source_url = f"https://github.com/{repo}"
-    if (
-        not isinstance(source_url, str)
-        or source_url.rstrip("/").lower() != expected_source_url.lower()
-    ):
+    if not isinstance(source_url, str) or source_url.rstrip("/").lower() != expected_source_url.lower():
         fail(
             f"{pkg['name']}: [project.urls] must carry Source/Repository = "
             f"{expected_source_url} (got {source_url!r}); PyPI verifies this against the Trusted Publisher"
@@ -172,9 +157,7 @@ def gate_package(
     wheels = [f for f in files if f.suffix == ".whl"]
     sdists = [f for f in files if f.name.endswith(".tar.gz")]
     if len(wheels) != 1 or len(sdists) != 1:
-        fail(
-            f"{pkg['name']}: expected exactly one wheel and one sdist, got {[f.name for f in files]}"
-        )
+        fail(f"{pkg['name']}: expected exactly one wheel and one sdist, got {[f.name for f in files]}")
     sh([sys.executable, "-m", "twine", "check", "--strict", *[str(f) for f in files]])
 
     meta = read_metadata(wheels[0])
@@ -183,14 +166,10 @@ def gate_package(
     if norm(msg["Name"]) != norm(pkg["name"]):
         fail(f"{pkg['name']}: built metadata Name={msg['Name']!r} does not match")
     if meta["py_count"] == 0:
-        fail(
-            f"{pkg['name']}: wheel contains no Python files — packaging is misconfigured"
-        )
+        fail(f"{pkg['name']}: wheel contains no Python files — packaging is misconfigured")
     bad_top = sorted(set(meta["top_level"]) & FORBIDDEN_TOP_LEVEL)
     if bad_top:
-        fail(
-            f"{pkg['name']}: wheel leaks non-package top-level entries {bad_top}; fix package discovery"
-        )
+        fail(f"{pkg['name']}: wheel leaks non-package top-level entries {bad_top}; fix package discovery")
     declared = release_cfg.get("import_names")
     if declared:
         actual = {t.removesuffix(".py") for t in meta["top_level"]}
@@ -215,17 +194,11 @@ def gate_package(
             )
     existing = pypi_versions(pkg["name"])
     if existing is None and event == "release":
-        fail(
-            f"{pkg['name']}: could not confirm PyPI release list; refusing to publish blind"
-        )
+        fail(f"{pkg['name']}: could not confirm PyPI release list; refusing to publish blind")
     if existing and version in existing:
         if event == "release":
-            fail(
-                f"{pkg['name']}=={version} already exists on PyPI; bump [project].version before releasing"
-            )
-        warn(
-            f"{pkg['name']}=={version} already exists on PyPI; a release will require a version bump"
-        )
+            fail(f"{pkg['name']}=={version} already exists on PyPI; bump [project].version before releasing")
+        warn(f"{pkg['name']}=={version} already exists on PyPI; a release will require a version bump")
 
     # Ignore checkout/PYTHONPATH/user-site modules in every venv probe: otherwise
     # a healthy source tree can mask a broken or incomplete installed wheel.
@@ -312,9 +285,7 @@ def main() -> None:
         else:
             m = re.match(r"^(?P<name>.+?)-v(?P<ver>\d.*)$", args.ref_name)
             if not m:
-                fail(
-                    f"multi-package repository: tag must be <package>-v<version>, got {args.ref_name!r}"
-                )
+                fail(f"multi-package repository: tag must be <package>-v<version>, got {args.ref_name!r}")
             selected = [p for p in pkgs if norm(p["name"]) == norm(m.group("name"))]
             if len(selected) != 1:
                 fail(
@@ -326,23 +297,15 @@ def main() -> None:
     receipts = []
     for pkg in selected:
         pkg_out = outdir if args.event == "release" else outdir / norm(pkg["name"])
-        receipts.append(
-            gate_package(
-                pkg, args.repo, args.event, args.ref_type, args.ref_name, pkg_out
-            )
-        )
+        receipts.append(gate_package(pkg, args.repo, args.event, args.ref_type, args.ref_name, pkg_out))
 
     (outdir.parent / "release-gate.json").write_text(json.dumps(receipts, indent=2))
     gh_out = os.environ.get("GITHUB_OUTPUT")
     if gh_out and args.event == "release":
         r = receipts[0]
         with open(gh_out, "a") as f:
-            f.write(
-                f"package={r['package']}\nversion={r['version']}\nenvironment={r['environment']}\n"
-            )
-    print(
-        f"release gate PASS for {[r['package'] + '==' + r['version'] for r in receipts]}"
-    )
+            f.write(f"package={r['package']}\nversion={r['version']}\nenvironment={r['environment']}\n")
+    print(f"release gate PASS for {[r['package'] + '==' + r['version'] for r in receipts]}")
 
 
 if __name__ == "__main__":
