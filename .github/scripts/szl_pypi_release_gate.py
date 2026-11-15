@@ -251,9 +251,11 @@ def gate_package(
             str(vpy),
             "-I",
             "-c",
-            f"import importlib.metadata as m; assert "
-            f"m.version({pkg['name']!r}) == {version!r}, "
-            f"m.version({pkg['name']!r})",
+            (
+                f"import importlib.metadata as m; assert "
+                f"m.version({pkg['name']!r}) == {version!r}, "
+                f"m.version({pkg['name']!r})"
+            ),
         ]
     )
     for mod in declared or []:
