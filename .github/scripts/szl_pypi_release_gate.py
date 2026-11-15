@@ -159,7 +159,8 @@ def gate_package(
         or source_url.rstrip("/").lower() != expected_source_url.lower()
     ):
         fail(
-            f"{pkg['name']}: [project.urls] must carry Source/Repository = {expected_source_url} (got {source_url!r}); PyPI verifies this against the Trusted Publisher"
+            f"{pkg['name']}: [project.urls] must carry Source/Repository = "
+            f"{expected_source_url} (got {source_url!r}); PyPI verifies this against the Trusted Publisher"
         )
 
     # Build into a per-package staging dir, then verify.
@@ -195,7 +196,8 @@ def gate_package(
         actual = {t.removesuffix(".py") for t in meta["top_level"]}
         if actual != set(declared):
             fail(
-                f"{pkg['name']}: wheel top-level names {sorted(actual)} != declared [tool.szl.release].import_names {sorted(declared)}"
+                f"{pkg['name']}: wheel top-level names {sorted(actual)} != declared "
+                f"[tool.szl.release].import_names {sorted(declared)}"
             )
     if not msg.get_all("Project-URL"):
         fail(f"{pkg['name']}: built metadata has no Project-URL entries")
@@ -208,7 +210,8 @@ def gate_package(
             fail(f"release event on non-tag ref {ref_type}:{ref_name}")
         if ref_name not in (tag_expect_single, tag_expect_multi):
             fail(
-                f"{pkg['name']}: tag {ref_name!r} does not match built version {version!r} (expected {tag_expect_single!r} or {tag_expect_multi!r})"
+                f"{pkg['name']}: tag {ref_name!r} does not match built version "
+                f"{version!r} (expected {tag_expect_single!r} or {tag_expect_multi!r})"
             )
     existing = pypi_versions(pkg["name"])
     if existing is None and event == "release":
@@ -248,7 +251,9 @@ def gate_package(
             str(vpy),
             "-I",
             "-c",
-            f"import importlib.metadata as m; assert m.version({pkg['name']!r}) == {version!r}, m.version({pkg['name']!r})",
+            f"import importlib.metadata as m; assert "
+            f"m.version({pkg['name']!r}) == {version!r}, "
+            f"m.version({pkg['name']!r})",
         ]
     )
     for mod in declared or []:
