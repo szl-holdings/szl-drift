@@ -20,3 +20,10 @@ select = [
 # probe.py deliberately catches bare Exception in `get()`: the probe's contract
 # is to fail closed and return a report, never to propagate a transport error.
 "probe.py" = ["BLE001"]
+# szl_pypi_release_gate.py is the org-health canonical release gate, synced
+# byte-identical; it is not locally reformattable, so E501 and I001 are waived for it only.
+".github/scripts/szl_pypi_release_gate.py" = ["E501", "I001"]
+
+[format]
+# The canonical release gate is byte-frozen; the formatter must not touch it.
+exclude = [".github/scripts/szl_pypi_release_gate.py"]
