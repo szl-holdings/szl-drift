@@ -14,7 +14,6 @@ to PyPI. Runs in the `build` job of `.github/workflows/publish-pypi.yml`:
 Fails closed. Nothing here talks to PyPI with credentials; publication happens
 only in the separate `publish` job through Trusted Publishing (OIDC).
 """
-
 from __future__ import annotations
 
 import argparse
@@ -25,29 +24,14 @@ import re
 import shutil
 import subprocess
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 import zipfile
 from email.parser import HeaderParser
 from pathlib import Path
 
-import tomllib
-
-FORBIDDEN_TOP_LEVEL = {
-    "tests",
-    "test",
-    "docs",
-    "examples",
-    "example",
-    "scripts",
-    "benchmarks",
-    "build",
-    "dist",
-    "out",
-    "data",
-    "payload",
-    "fixtures",
-}
+FORBIDDEN_TOP_LEVEL = {"tests", "test", "docs", "examples", "example", "scripts", "benchmarks", "build", "dist", "out", "data", "payload", "fixtures"}
 PRIVATE_CLASSIFIER = "Private :: Do Not Upload"
 
 
@@ -74,23 +58,14 @@ def parse_packages(spec: str) -> list[dict]:
     for item in [s.strip() for s in spec.split(";") if s.strip()]:
         name, _, rest = item.partition("=")
         directory, _, env = rest.partition(":")
-        pkgs.append(
-            {
-                "name": name.strip(),
-                "dir": (directory or ".").strip(),
-                "environment": (env or "pypi").strip(),
-            }
-        )
+        pkgs.append({"name": name.strip(), "dir": (directory or ".").strip(), "environment": (env or "pypi").strip()})
     if not pkgs:
         fail("SZL_PACKAGES is empty")
     return pkgs
 
 
 def pypi_versions(name: str) -> set[str] | None:
-    req = urllib.request.Request(
-        f"https://pypi.org/pypi/{norm(name)}/json",
-        headers={"User-Agent": "szl-pypi-release-gate/1"},
-    )
+    req = urllib.request.Request(f"https://pypi.org/pypi/{norm(name)}/json", headers={"User-Agent": "szl-pypi-release-gate/1"})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             return set(json.loads(r.read())["releases"].keys())
@@ -99,10 +74,7 @@ def pypi_versions(name: str) -> set[str] | None:
             return set()
         warn(f"PyPI lookup for {name} failed: HTTP {e.code}")
         return None
-    except (
-        OSError,
-        ValueError,
-    ) as e:  # network trouble is not a reason to publish blindly on release
+    except Exception as e:  # network trouble is not a reason to publish blindly on release
         warn(f"PyPI lookup for {name} failed: {e}")
         return None
 
@@ -131,9 +103,7 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
     if PRIVATE_CLASSIFIER in (project.get("classifiers") or []):
         fail(f"{pkg['name']}: carries '{PRIVATE_CLASSIFIER}' — not a publishable package")
     if not (pp.get("build-system") or {}).get("build-backend"):
-        fail(
-            f"{pkg['name']}: pyproject has no [build-system].build-backend (PEP 517 backend must be explicit)"
-        )
+        fail(f"{pkg['name']}: pyproject has no [build-system].build-backend (PEP 517 backend must be explicit)")
     for key in ("description", "readme", "requires-python"):
         if not project.get(key):
             fail(f"{pkg['name']}: [project].{key} is required")
@@ -143,10 +113,7 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
     source_url = urls.get("Source") or urls.get("Repository") or urls.get("Source Code")
     expected_source_url = f"https://github.com/{repo}"
     if not isinstance(source_url, str) or source_url.rstrip("/").lower() != expected_source_url.lower():
-        fail(
-            f"{pkg['name']}: [project.urls] must carry Source/Repository = "
-            f"{expected_source_url} (got {source_url!r}); PyPI verifies this against the Trusted Publisher"
-        )
+        fail(f"{pkg['name']}: [project.urls] must carry Source/Repository = {expected_source_url} (got {source_url!r}); PyPI verifies this against the Trusted Publisher")
 
     # Build into a per-package staging dir, then verify.
     stage = outdir.parent / f"stage-{norm(pkg['name'])}"
@@ -172,12 +139,9 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
         fail(f"{pkg['name']}: wheel leaks non-package top-level entries {bad_top}; fix package discovery")
     declared = release_cfg.get("import_names")
     if declared:
-        actual = {t.removesuffix(".py") for t in meta["top_level"]}
+        actual = {t[:-3] if t.endswith(".py") else t for t in meta["top_level"]}
         if actual != set(declared):
-            fail(
-                f"{pkg['name']}: wheel top-level names {sorted(actual)} != declared "
-                f"[tool.szl.release].import_names {sorted(declared)}"
-            )
+            fail(f"{pkg['name']}: wheel top-level names {sorted(actual)} != declared [tool.szl.release].import_names {sorted(declared)}")
     if not msg.get_all("Project-URL"):
         fail(f"{pkg['name']}: built metadata has no Project-URL entries")
 
@@ -188,10 +152,7 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
         if ref_type != "tag":
             fail(f"release event on non-tag ref {ref_type}:{ref_name}")
         if ref_name not in (tag_expect_single, tag_expect_multi):
-            fail(
-                f"{pkg['name']}: tag {ref_name!r} does not match built version "
-                f"{version!r} (expected {tag_expect_single!r} or {tag_expect_multi!r})"
-            )
+            fail(f"{pkg['name']}: tag {ref_name!r} does not match built version {version!r} (expected {tag_expect_single!r} or {tag_expect_multi!r})")
     existing = pypi_versions(pkg["name"])
     if existing is None and event == "release":
         fail(f"{pkg['name']}: could not confirm PyPI release list; refusing to publish blind")
@@ -206,54 +167,16 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
     shutil.rmtree(venv, ignore_errors=True)
     sh([sys.executable, "-m", "venv", str(venv)])
     vpy = venv / ("Scripts" if os.name == "nt" else "bin") / "python"
-    sh(
-        [
-            str(vpy),
-            "-I",
-            "-m",
-            "pip",
-            "install",
-            "--disable-pip-version-check",
-            "-q",
-            str(wheels[0]),
-        ]
-    )
+    sh([str(vpy), "-I", "-m", "pip", "install", "--disable-pip-version-check", "-q", str(wheels[0])])
     sh([str(vpy), "-I", "-m", "pip", "check"])
-    sh(
-        [
-            str(vpy),
-            "-I",
-            "-c",
-            (
-                f"import importlib.metadata as m; assert "
-                f"m.version({pkg['name']!r}) == {version!r}, "
-                f"m.version({pkg['name']!r})"
-            ),
-        ]
-    )
+    sh([str(vpy), "-I", "-c", f"import importlib.metadata as m; assert m.version({pkg['name']!r}) == {version!r}, m.version({pkg['name']!r})"])
     for mod in declared or []:
-        sh(
-            [
-                str(vpy),
-                "-I",
-                "-c",
-                f"import importlib; importlib.import_module({mod!r})",
-            ]
-        )
+        sh([str(vpy), "-I", "-c", f"import importlib; importlib.import_module({mod!r})"])
 
     outdir.mkdir(parents=True, exist_ok=True)
-    receipt = {
-        "package": pkg["name"],
-        "version": version,
-        "environment": pkg["environment"],
-        "event": event,
-        "ref": f"{ref_type}:{ref_name}",
-        "repository": repo,
-        "source_sha": os.environ.get("GITHUB_SHA"),
-        "run_id": os.environ.get("GITHUB_RUN_ID"),
-        "files": {},
-        "top_level": meta["top_level"],
-    }
+    receipt = {"package": pkg["name"], "version": version, "environment": pkg["environment"], "event": event, "ref": f"{ref_type}:{ref_name}",
+               "repository": repo, "source_sha": os.environ.get("GITHUB_SHA"), "run_id": os.environ.get("GITHUB_RUN_ID"),
+               "files": {}, "top_level": meta["top_level"]}
     for f in files:
         receipt["files"][f.name] = hashlib.sha256(f.read_bytes()).hexdigest()
         shutil.copy2(f, outdir / f.name)
@@ -263,11 +186,7 @@ def gate_package(pkg: dict, repo: str, event: str, ref_type: str, ref_name: str,
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--packages",
-        required=True,
-        help="name=dir[:environment];name2=dir2[:environment]",
-    )
+    ap.add_argument("--packages", required=True, help="name=dir[:environment];name2=dir2[:environment]")
     ap.add_argument("--repo", required=True)
     ap.add_argument("--event", required=True)
     ap.add_argument("--ref-type", required=True)
@@ -288,9 +207,7 @@ def main() -> None:
                 fail(f"multi-package repository: tag must be <package>-v<version>, got {args.ref_name!r}")
             selected = [p for p in pkgs if norm(p["name"]) == norm(m.group("name"))]
             if len(selected) != 1:
-                fail(
-                    f"tag {args.ref_name!r} names no declared package; declared: {[p['name'] for p in pkgs]}"
-                )
+                fail(f"tag {args.ref_name!r} names no declared package; declared: {[p['name'] for p in pkgs]}")
     else:
         selected = pkgs
 
